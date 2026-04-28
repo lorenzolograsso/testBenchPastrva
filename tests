@@ -2,3 +2,6 @@ node -e "require('serialport').SerialPort.list().then(p => console.log(p))"
 
 https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference+user%3Asessions%3Aclaude_code+user%3Amcp_servers+user%3Afile_upload&code_challenge=5E56XSntHOQFMjvPh9RFIjTNkBDXnXzPz6tzRV5cIj0&code_challenge_method=S256&state=JJBVDJ8tdx8BnVm9jlibeUEU9qGO4j1a4oFrMlYLNxc
 ovMH05WpiLf7HYBu2bPeu66wnT9y9ljIiZZWzYeKa0hz39r9#JJBVDJ8tdx8BnVm9jlibeUEU9qGO4j1a4oFrMlYLNxc
+
+google map route
+https://www.google.com/maps/dir/45.7546844,15.9914766/45.8366723,15.9724991/@45.7889851,15.9895022,15999m/data=!3m1!1e3!4m14!4m13!1m10!3m4!1m2!1d15.9908907!2d45.7725459!3s0x4765d5e047cb6ceb:0xd298aa0d5eaf4d6c!3m4!1m2!1d15.9722965!2d45.8167662!3s0x4765d71d3e745e97:0x2e30ac1da778468b!1m0!3e0?entry=ttu&g_ep=EgoyMDI2MDQyMi4wIKXMDSoASAFQAw%3D%3D
