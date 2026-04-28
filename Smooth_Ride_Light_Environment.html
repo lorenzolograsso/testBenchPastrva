@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>3D Tracking — GPS Simulation</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.20.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.20.0/mapbox-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#080a0e}
+body{display:flex;align-items:center;justify-content:center;font-family:'Inter',system-ui,sans-serif}
+#wrap{position:relative;width:100vw;height:100vh;max-width:1100px;max-height:850px;border-radius:40px;overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.03),0 60px 140px rgba(0,0,0,.5)}
+#map{width:100%;height:100%}
+#wrap::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:5;border-radius:40px;background:radial-gradient(ellipse 80% 70% at 50% 48%,transparent 40%,rgba(200,208,218,.08) 100%)}
+.ht{position:absolute;top:32px;left:50%;transform:translateX(-50%);display:flex;align-items:stretch;z-index:10;border-radius:18px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.06),0 0 0 .5px rgba(0,0,0,.04)}
+.hd{display:flex;align-items:center;gap:10px;padding:14px 20px;background:rgba(255,255,255,.97)}
+.hd .ad{font-size:15px;font-weight:600;color:#1d1d1f;letter-spacing:-.2px;white-space:nowrap}
+.he{padding:14px 20px;background:#1d1d1f;color:#fff;font-size:14px;font-weight:600;letter-spacing:-.1px;white-space:nowrap;display:flex;align-items:center;font-variant-numeric:tabular-nums}
+.hb{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);display:flex;align-items:center;z-index:10}
+.sb{display:flex;align-items:baseline;gap:5px;padding:12px 22px;background:rgba(255,255,255,.97);border-radius:18px;box-shadow:0 2px 20px rgba(0,0,0,.06)}
+.sv{font-size:36px;font-weight:700;color:#1d1d1f;letter-spacing:-.8px;line-height:1;font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+.su{font-size:14px;font-weight:500;color:#8e8e93}
+.mode-panel{position:absolute;top:32px;left:32px;z-index:10;display:flex;flex-direction:column;gap:6px}
+.mode-btn{padding:10px 16px;border-radius:14px;border:2px solid transparent;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.3px;background:rgba(255,255,255,.88);color:#1d1d1f;backdrop-filter:blur(16px);box-shadow:0 2px 10px rgba(0,0,0,.06);transition:all .2s;text-transform:uppercase;text-align:left;line-height:1.4}
+.mode-btn:hover{transform:scale(1.02)}
+.mode-btn.active{border-color:#34C759;background:rgba(255,255,255,.97)}
+.mode-btn .sub{font-size:9px;font-weight:600;color:#888;text-transform:none;letter-spacing:0;display:block;margin-top:2px}
+.mode-btn.low .sub{color:#FF9500}.mode-btn.high .sub{color:#34C759}
+.gps-bar{position:absolute;top:96px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:100px;z-index:10;backdrop-filter:blur(16px);transition:all .4s;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.gps-bar.good{background:rgba(52,199,89,.88);color:#fff}
+.gps-bar.fair{background:rgba(255,149,0,.88);color:#fff}
+.gps-bar.poor{background:rgba(211,47,47,.88);color:#fff}
+.gps-bar.wait{background:rgba(255,255,255,.85);color:#1d1d1f}
+.gps-dots{display:flex;gap:3px}.gps-dots i{width:4px;height:12px;border-radius:2px;background:currentColor;opacity:.3}.gps-dots i.on{opacity:1}
+.stats{position:absolute;top:32px;right:32px;z-index:10;display:flex;flex-direction:column;gap:4px;max-height:calc(100% - 80px);overflow-y:auto}
+.st{padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.78);backdrop-filter:blur(12px);font-size:10px;font-weight:600;color:#555;font-variant-numeric:tabular-nums;white-space:nowrap}
+.st.pipe-label{background:rgba(20,20,24,.72);color:rgba(255,255,255,.45);font-size:9px;letter-spacing:.5px;text-transform:uppercase;margin-top:4px;padding:4px 10px}
+.st.buf{background:rgba(88,86,214,.15);color:#5856d6;border:1px solid rgba(88,86,214,.25)}
+.cam-ctrls{position:absolute;bottom:40px;left:32px;display:flex;flex-direction:column;gap:6px;z-index:10}
+.cam-btn{padding:8px 14px;border-radius:12px;border:none;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.3px;background:rgba(255,255,255,.85);color:#1d1d1f;backdrop-filter:blur(16px);box-shadow:0 2px 10px rgba(0,0,0,.06);transition:all .2s;text-transform:uppercase}
+.cam-btn:hover{transform:scale(1.04)}.cam-btn.active{background:rgba(30,30,32,.92);color:#fff}
+.ctrls{position:absolute;bottom:40px;right:32px;display:flex;flex-direction:column;gap:10px;z-index:10}
+.btn{width:50px;height:50px;border-radius:16px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 16px rgba(0,0,0,.10);transition:all .15s}
+.btn:hover{transform:scale(1.06)}.btn:active{transform:scale(.95)}
+.btn.play{background:rgba(30,30,32,.92);backdrop-filter:blur(16px)}.btn.play svg{fill:#fff}
+.btn.rst{background:rgba(255,255,255,.92);backdrop-filter:blur(16px)}.btn.rst svg{fill:#1d1d1f}
+.mapboxgl-ctrl-bottom-left,.mapboxgl-ctrl-bottom-right,.mapboxgl-ctrl-top-right,.mapboxgl-ctrl-top-left{display:none!important}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="map"></div>
+  <div class="ht">
+    <div class="hd">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="4" fill="#34C759"/>
+        <circle cx="12" cy="12" r="9" stroke="#34C759" stroke-width="2" opacity=".4"/>
+      </svg>
+      <span class="ad">Zagreb → Buzin</span>
+    </div>
+    <div class="he" id="coords">—</div>
+  </div>
+  <div class="gps-bar wait" id="gps">
+    <div class="gps-dots"><i></i><i></i><i></i><i></i></div>
+    <span id="gps-txt">Ready</span>
+  </div>
+  <div class="mode-panel">
+    <button class="mode-btn low active" data-mode="low">Low GPS<span class="sub">3s · ±20m noise · drops &amp; jumps</span></button>
+    <button class="mode-btn high" data-mode="high">High GPS<span class="sub">0.5s · ±4m noise · reliable</span></button>
+  </div>
+  <div class="stats">
+    <div class="st pipe-label">📡 Raw Input</div>
+    <div class="st" id="s-mode">Mode: Low GPS</div>
+    <div class="st" id="s-ping">Pings: 0</div>
+    <div class="st" id="s-acc">Accuracy: —</div>
+
+    <div class="st pipe-label">🚫 1 · Outlier Rejection</div>
+    <div class="st" id="s-rejected">Rejected: 0</div>
+    <div class="st" id="s-gate">Speed gate: —</div>
+
+    <div class="st pipe-label">📐 2 · Kalman Filter</div>
+    <div class="st" id="s-kalman">Variance: —</div>
+
+    <div class="st pipe-label">🗺 3 · Map Match + Turf</div>
+    <div class="st" id="s-snap">Map Match: idle</div>
+    <div class="st" id="s-turf">Turf snap: —</div>
+    <div class="st" id="s-path">Progress: —</div>
+
+    <div class="st pipe-label">🎬 Route Playhead</div>
+    <div class="st buf" id="s-buf">Spline: —</div>
+    <div class="st buf" id="s-playhead">Target: —</div>
+    <div class="st buf" id="s-interp">Render dist: —</div>
+
+    <div class="st pipe-label">🧭 Output</div>
+    <div class="st" id="s-heading">Bearing: —</div>
+    <div class="st" id="s-delay">GPS delay: —</div>
+  </div>
+  <div class="hb">
+    <div class="sb"><span class="sv" id="spd">0</span><span class="su">Km/h</span></div>
+  </div>
+  <div class="cam-ctrls">
+    <button class="cam-btn" data-cam="hood">Hood</button>
+    <button class="cam-btn active" data-cam="cinematic">Cinematic</button>
+  </div>
+  <div class="ctrls">
+    <button class="btn play" id="bP"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+    <button class="btn rst" id="bR"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></button>
+  </div>
+</div>
+
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoiZ2VvbWFwcyIsImEiOiJUb1h5aHlRIn0.GTApbnsBPaAfAfSKCDInYA';
+const CAR = 'https://docs.mapbox.com/mapbox-gl-js/assets/ego_car.glb';
+const MAT = ['body','lights_brakes','lights-brakes_reverse','lights_brakes_volume','lights-brakes_reverse_volume'];
+const CAMS = { hood:{p:60,z:19.2,o:0}, cinematic:{p:68,z:17.5,o:25} };
+let cam = 'cinematic';
+const $ = id => document.getElementById(id);
+
+const ORIGIN = [15.978737662011753, 45.815805987980866];
+const DEST   = [15.991932347165433, 45.75472369093238];
+
+const MODES = {
+  low : { interval:3000, noiseM:20, accR:[15,30], speedVar:.3,  dropRate:.08, jumpRate:.03  },
+  high: { interval:500,  noiseM:4,  accR:[2,6],   speedVar:.05, dropRate:.01, jumpRate:.005 }
+};
+let mode = 'low';
+
+// ═════════════════════════════════════════════════════════
+// ARCHITECTURE
+//
+// The fundamental insight: GPS position and rendered position
+// are completely decoupled. GPS tells us HOW FAR along the
+// route the vehicle has travelled. The pre-baked route spline
+// tells us exactly WHERE on screen that distance maps to.
+//
+// ON LOAD:
+//   1. Fetch route geometry from Mapbox Directions API
+//   2. Pre-bake a dense Catmull-Rom spline across all route
+//      coordinates. Arc-length parameterised so every metre
+//      of route maps to exactly one spline sample.
+//   3. Build a cumulative distance lookup table so we can
+//      convert "X metres along route" → spline index in O(log n).
+//
+// SIMULATION RUNNING:
+//   GPS ping → 4-layer filter pipeline → extract distM
+//   (project filtered position onto pre-baked route,
+//    find nearest point, record cumulative distance)
+//   Push { distM, speedKmh, wallMs } into gpsQueue[]
+//
+// RENDER LOOP (60fps):
+//   Read from gpsQueue with a fixed RENDER_DELAY behind
+//   the newest entry. Smooth the target distM with a low-pass
+//   filter so GPS noise doesn't cause speed oscillation.
+//   Look up spline index for smoothed distM → instant position
+//   and heading from pre-baked array. No interpolation needed.
+//   No jumps. No turn issues. No segment boundaries.
+//
+// GPS drives WHEN the car is at position X.
+// The route spline drives WHERE that position is on screen.
+// These are fully independent. Neither can corrupt the other.
+// ═════════════════════════════════════════════════════════
+
+// How far behind latest GPS data the renderer sits.
+// Must be larger than GPS interval to always have a bracket.
+const RENDER_DELAY_MS = 4000;   // 4s — comfortable for 3s Low GPS interval
+
+// Samples per metre in the pre-baked spline.
+// 2 samples/m = one sample every 50cm — smooth enough for any zoom level.
+const SPLINE_SPM = 2;
+
+// ─────────────────────────────────────────────────────────
+// PRE-BAKED ROUTE SPLINE
+// Populated once after fetchRoute() succeeds.
+// routeSpline[i] = { lng, lat, brg, distM }
+// routeSplineTotal = total arc length in metres
+// ─────────────────────────────────────────────────────────
+let routeSpline      = [];   // pre-baked dense path
+let routeSplineTotal = 0;    // total arc length (m)
+let routeCoords      = [];   // raw Mapbox Directions coords
+let routeSegDists    = [];
+let routeTotalM      = 0;
+
+// ─────────────────────────────────────────────────────────
+// GPS QUEUE
+// Each entry produced by the 4-layer filter pipeline.
+// { distM: metres along route, speedKmh, wallMs: Date.now() }
+// The render loop reads this with RENDER_DELAY_MS lag.
+// ─────────────────────────────────────────────────────────
+let gpsQueue = []; // kept for reference only — no longer used by render loop
+const GPS_QUEUE_MAX = 300;
+
+// ─────────────────────────────────────────────────────────
+// RENDER PLAYHEAD
+//
+// renderDistM  — current position on the pre-baked spline (m)
+// playSpeedMS  — current advance rate (m/s), set from GPS
+// playLastTs   — performance.now() of last rAF tick
+//
+// The playhead advances renderDistM by (playSpeedMS × dt)
+// every frame — completely independently of when GPS arrives.
+// GPS only updates playSpeedMS. It never touches renderDistM
+// directly. This decouples rendering from GPS timing entirely.
+//
+// GPS distM is used ONLY to gently correct drift: if the
+// playhead has wandered more than DRIFT_CORRECT_M metres
+// from the latest GPS position, we nudge playSpeedMS up or
+// down by a small correction factor to catch up gradually
+// without any visible speed change.
+// ─────────────────────────────────────────────────────────
+let renderDistM  = 0;      // playhead position along spline (m)
+let playSpeedMS  = 0;      // current advance rate (m/s) from GPS
+let playLastTs   = 0;      // last rAF timestamp for dt
+
+// GPS-derived state (updated by ingest, read by render)
+let gpsDistM     = 0;      // latest accepted GPS position (m along route)
+let gpsSpeedMS   = 11;     // latest GPS speed (m/s)
+let gpsWallMs    = 0;      // wall-clock ms when latest GPS was received
+let gpsReady     = false;  // at least one GPS fix received
+let gpsLive      = false;  // GPS is actively streaming (set false on pause / stale)
+let simStarted   = false;  // first ping received (declared here for render loop)
+
+// If no GPS fix arrives within this window, treat signal as lost and coast to stop.
+// Covers both user pause and real-world dropouts (tunnels, urban canyons).
+const GPS_STALE_MS = 6000;
+
+// Drift correction: if playhead drifts > this from GPS, nudge speed
+const DRIFT_CORRECT_M = 20;
+
+// FIX 2: EMA smoothing factor for gpsSpeedMS. Raw simulator speed carries
+// ±30% noise (MODES.low.speedVar) which otherwise feeds straight into
+// playSpeedMS → renderDistM advance rate → visible speed jitter.
+// 0.3 = each new fix moves EMA ~30% toward the new value.
+const SPEED_EMA_ALPHA = 0.3;
+
+// FIX 3: frame-rate-independent smoothing half-lives (seconds).
+// Replace per-frame alpha constants which were 60Hz-specific.
+const SPEED_HALF_LIFE_S = 1.5;
+const BRG_HALF_LIFE_S   = 0.25;
+
+// Release playhead after this many accepted filtered fixes.
+// 1 = start moving on first valid GPS fix.
+const GPS_WARMUP = 1;
+let gpsFixCount = 0;
+
+// ═════════════════════════════════════════════════════════
+// RENDER LOOP — 60fps
+//
+// Every frame:
+//   1. dt = time since last frame (capped at 100ms)
+//   2. Advance renderDistM += playSpeedMS × dt
+//   3. Drift-correct playSpeedMS if needed
+//   4. Clamp renderDistM to [0, routeSplineTotal]
+//   5. Binary-search spline index for renderDistM
+//   6. Read {lng, lat, brg} from routeSpline[idx]
+//
+// No GPS values are read here except playSpeedMS and
+// gpsDistM for drift correction. Position is 100% from
+// the pre-baked spline. Speed is GPS-derived but smoothed.
+// ═════════════════════════════════════════════════════════
+function renderLoop(ts){
+  requestAnimationFrame(renderLoop);
+  if(!routeReady || routeSpline.length === 0) return;
+
+  if(gpsFixCount < GPS_WARMUP){
+    // Park at route start, wait for first accepted GPS fix
+    const pt0 = routeSpline[0];
+    mc(pt0.lng, pt0.lat, carBrg);
+    if(following){
+      const c=CAMS[cam];
+      map.easeTo({center:[pt0.lng,pt0.lat],bearing:carBrg+c.o,pitch:c.p,zoom:c.z,duration:0});
+    }
+    $('s-playhead').textContent = simStarted
+      ? `Warmup: ${gpsFixCount}/${GPS_WARMUP} fixes`
+      : 'Waiting for GPS…';
+    return;
+  }
+
+  // ── dt: time since last frame (seconds) ───────────────
+  const dt = playLastTs > 0 ? Math.min((ts - playLastTs) / 1000, 0.1) : 0.016;
+  playLastTs = ts;
+
+  // ── GPS liveness check ─────────────────────────────────
+  // If fixes have stopped arriving (user pressed pause, or real-world
+  // signal loss), treat GPS as not live. Interpolation is GPS-driven,
+  // so with no GPS there is no target speed to chase — the vehicle
+  // must coast to a stop.
+  const msSinceLastFix = Date.now() - gpsWallMs;
+  if (gpsLive && gpsWallMs > 0 && msSinceLastFix > GPS_STALE_MS) {
+    gpsLive = false;
+  }
+
+  // Hoisted for the stats readout below.
+  let drift = 0;
+  const gpsAgeS = Math.min(msSinceLastFix / 1000, 5);
+
+  if (!gpsLive) {
+    // No GPS → no drift correction, no speed target. Decay playSpeedMS
+    // toward 0 with the same frame-rate-independent LPF used during
+    // normal driving, so the stop is smooth rather than a hard halt.
+    const speedAlpha = 1 - Math.pow(0.5, dt / SPEED_HALF_LIFE_S);
+    playSpeedMS += (0 - playSpeedMS) * speedAlpha;
+    playSpeedMS = Math.max(0, playSpeedMS);
+  } else {
+    // ── Drift correction ────────────────────────────────
+    // How far is the playhead from the latest GPS position?
+    // Positive = playhead is behind GPS (too slow → speed up)
+    // Negative = playhead is ahead of GPS (too fast → slow down)
+    // Account for time elapsed since GPS was received:
+    // GPS position also advances at gpsSpeedMS since gpsWallMs.
+    const estimatedGpsDist = gpsDistM + gpsSpeedMS * gpsAgeS;
+    drift = estimatedGpsDist - renderDistM;
+
+    // FIX 3: dead-band so small GPS-noise drift doesn't drive correction.
+    // Under Low GPS, projected gpsDistM can bounce ±10m between fixes — that
+    // bounce would otherwise pump straight into playSpeedMS.
+    const driftAbs = Math.abs(drift);
+    const driftEffective = driftAbs < DRIFT_CORRECT_M
+      ? 0
+      : Math.sign(drift) * (driftAbs - DRIFT_CORRECT_M);
+
+    // Gentler correction: ±8% max (was ±20%), spread over ~8s (was ~5s).
+    const correctionFactor = Math.max(-0.08, Math.min(0.08,
+        driftEffective / (gpsSpeedMS * 8 + 1)));
+    const targetSpeedMS = gpsSpeedMS * (1 + correctionFactor);
+
+    // Frame-rate-independent LPF. Previous alpha=0.03 per frame was 3× more
+    // aggressive on a 144Hz monitor than on 60Hz.
+    const speedAlpha = 1 - Math.pow(0.5, dt / SPEED_HALF_LIFE_S);
+    playSpeedMS += (targetSpeedMS - playSpeedMS) * speedAlpha;
+    playSpeedMS = Math.max(0, playSpeedMS);
+  }
+
+  // ── Advance playhead ───────────────────────────────────
+  renderDistM += playSpeedMS * dt;
+  renderDistM = Math.max(0, Math.min(renderDistM, routeSplineTotal));
+
+  // ── Lookup position from pre-baked spline ─────────────
+  const idx = splineIdxForDist(renderDistM);
+  const pt  = routeSpline[idx];
+
+  carLng = pt.lng;
+  carLat = pt.lat;
+  // FIX 4: frame-rate-independent bearing smoothing.
+  const brgAlpha = 1 - Math.pow(0.5, dt / BRG_HALF_LIFE_S);
+  carBrg = mxA(carBrg, pt.brg, brgAlpha);
+  carSpd = playSpeedMS * 3.6;
+
+  mc(carLng, carLat, carBrg);
+
+  // Brake lights
+  const bT = carSpd < 5 ? 0.5 : 0;
+  bi += (bT > bi ? .3 : .05) * (bT - bi);
+  bi = Math.max(0, Math.min(1, bi));
+
+  // Trail
+  if(drivenTrail.length===0 ||
+     hvM([drivenTrail[drivenTrail.length-1][0],drivenTrail[drivenTrail.length-1][1]],[carLng,carLat])>1.5){
+    drivenTrail.push([carLng,carLat]);
+    if(drivenTrail.length>800) drivenTrail.shift();
+    updateTrail();
+  }
+
+  // Stats
+  $('spd').textContent        = Math.round(Math.max(0, carSpd));
+  $('s-buf').textContent      = `Spline: ${routeSpline.length} pts`;
+  $('s-playhead').textContent = `GPS: ${gpsDistM.toFixed(0)}m  play: ${renderDistM.toFixed(0)}m`;
+  $('s-interp').textContent   = `Drift: ${drift.toFixed(1)}m  spd: ${(playSpeedMS*3.6).toFixed(1)}km/h`;
+  $('s-heading').textContent  = `Bearing: ${carBrg.toFixed(1)}°`;
+  $('s-delay').textContent    = `GPS age: ${gpsAgeS.toFixed(1)}s`;
+
+  if(following){
+    const c=CAMS[cam];
+    map.easeTo({center:[carLng,carLat],bearing:carBrg+c.o,pitch:c.p,zoom:c.z,duration:0});
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// MAP STYLE
+// ─────────────────────────────────────────────────────────
+const style = {
+  version:8,
+  imports:[{id:'basemap',url:'mapbox://styles/mapbox/standard',config:{
+    theme:'default', lightPreset:'day',
+    showPointOfInterestLabels:false, showTransitLabels:false,
+    showPlaceLabels:true, showRoadLabels:true, show3dObjects:true
+  }}],
+  sources:{cs:{type:'model',models:{car:{uri:CAR,position:ORIGIN,orientation:[0,0,0],materialOverrideNames:MAT}}}},
+  layers:[{id:'cl',type:'model',source:'cs',slot:'top',paint:{
+    'model-scale':[3,3,3], 'model-type':'location-indicator',
+    'model-color':['match',['get','part'],
+      'lights_brakes',['feature-state','blc'],'lights-brakes_reverse',['feature-state','blc'],
+      'lights_brakes_volume',['feature-state','blc'],'lights-brakes_reverse_volume',['feature-state','blc'],
+      ['feature-state','vc']],
+    'model-color-mix-intensity':['match',['get','part'],'body',0.12,
+      'lights_brakes',['feature-state','ble'],'lights-brakes_reverse',['feature-state','ble'],
+      'lights_brakes_volume',['feature-state','ble'],'lights-brakes_reverse_volume',['feature-state','ble'],0.0],
+    'model-emissive-strength':['match',['get','part'],
+      'lights_brakes',['feature-state','ble'],'lights_brakes_volume',['feature-state','ble'],
+      'lights-brakes_reverse',['feature-state','ble'],'lights-brakes_reverse_volume',['feature-state','ble'],0.0],
+    'model-opacity':['match',['get','part'],
+      'lights_brakes_volume',['feature-state','ble'],'lights-brakes_reverse_volume',['feature-state','ble'],1.0],
+    'model-rotation':[0,0,0]
+  }}]
+};
+
+const map = new mapboxgl.Map({
+  container:'map', style, projection:'globe',
+  pitch:68, zoom:17.5, bearing:0, center:ORIGIN, antialias:true
+});
+
+// ─────────────────────────────────────────────────────────
+// MATH
+// ─────────────────────────────────────────────────────────
+function hvM(a,b){
+  const R=6371000,r=Math.PI/180,
+        dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r,
+        s=Math.sin(dl/2)**2+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)**2;
+  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+}
+function bgFn(a,b){
+  const r=Math.PI/180,d=(b[0]-a[0])*r,la=a[1]*r,lb=b[1]*r;
+  return(Math.atan2(Math.sin(d)*Math.cos(lb),Math.cos(la)*Math.sin(lb)-Math.sin(la)*Math.cos(lb)*Math.cos(d))*180/Math.PI+360)%360;
+}
+function mxA(a,b,t){let d=((b-a+540)%360)-180;return(a+d*t+360)%360;}
+function addNoise(ln,la,rM){
+  const a=Math.random()*Math.PI*2,d=(Math.random()+Math.random())*.5*rM;
+  return[ln+d*Math.sin(a)/(111320*Math.cos(la*Math.PI/180)),la+d*Math.cos(a)/111320];
+}
+
+// Catmull-Rom scalar
+function cr(p0,p1,p2,p3,t){
+  const t2=t*t,t3=t2*t;
+  return 0.5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3);
+}
+
+// ─────────────────────────────────────────────────────────
+// PRE-BAKE ROUTE SPLINE
+// Called once after route coords are fetched.
+// Fits Catmull-Rom across all route coords, arc-length
+// parameterises, outputs dense array at SPLINE_SPM samples/m.
+// ─────────────────────────────────────────────────────────
+function prebakeRoute(coords) {
+  if (coords.length < 4) return false;
+
+  const N = coords.length;
+  const RAW_PER_SEG = 100; // sub-samples per segment for arc table
+
+  // Dense raw sample
+  const raw = [];
+  for (let i = 1; i < N - 2; i++) {
+    const p0 = coords[i-1], p1 = coords[i], p2 = coords[i+1], p3 = coords[i+2];
+    for (let s = 0; s < RAW_PER_SEG; s++) {
+      const t = s / RAW_PER_SEG;
+      raw.push([
+        cr(p0[0],p1[0],p2[0],p3[0],t),
+        cr(p0[1],p1[1],p2[1],p3[1],t)
+      ]);
+    }
+  }
+  // Final point
+  raw.push([coords[N-2][0], coords[N-2][1]]);
+
+  if (raw.length < 2) return false;
+
+  // Cumulative arc-length table
+  const arc = new Float64Array(raw.length);
+  for (let i = 1; i < raw.length; i++) {
+    arc[i] = arc[i-1] + hvM(raw[i-1], raw[i]);
+  }
+  const totalArc = arc[arc.length-1];
+  if (totalArc < 1) return false;
+
+  // Sample at constant SPLINE_SPM samples per metre
+  const nSamples = Math.ceil(totalArc * SPLINE_SPM);
+  routeSpline = new Array(nSamples);
+  let ri = 0;
+
+  for (let s = 0; s < nSamples; s++) {
+    const targetArc = (s / (nSamples - 1)) * totalArc;
+    while (ri < raw.length - 2 && arc[ri+1] < targetArc) ri++;
+    const span = arc[ri+1] - arc[ri];
+    const frac = span > 0 ? (targetArc - arc[ri]) / span : 0;
+    const rA = raw[ri], rB = raw[ri+1] || rA;
+    const lng = rA[0] + (rB[0]-rA[0]) * frac;
+    const lat = rA[1] + (rB[1]-rA[1]) * frac;
+    // Bearing from forward difference
+    const nextIdx = Math.min(s+1, nSamples-1);
+    // store distM for lookup
+    routeSpline[s] = { lng, lat, brg:0, distM: targetArc };
+  }
+
+  // Second pass: compute bearings from position differences
+  for (let s = 0; s < nSamples; s++) {
+    const next = routeSpline[Math.min(s+1, nSamples-1)];
+    const prev = routeSpline[Math.max(s-1, 0)];
+    routeSpline[s].brg = bgFn([prev.lng,prev.lat],[next.lng,next.lat]);
+  }
+
+  routeSplineTotal = totalArc;
+  console.log(`Route spline baked: ${nSamples} samples over ${(totalArc/1000).toFixed(2)}km`);
+  return true;
+}
+
+// Binary search: find spline index for a given distM
+function splineIdxForDist(distM) {
+  distM = Math.max(0, Math.min(distM, routeSplineTotal));
+  if (routeSpline.length === 0) return 0;
+  let lo = 0, hi = routeSpline.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    routeSpline[mid].distM <= distM ? lo = mid : hi = mid;
+  }
+  return lo;
+}
+
+// Project [lng,lat] onto route spline — returns nearest distM
+// Uses binary search chunks for speed since route can be long.
+function projectOntoRoute(lng, lat) {
+  if (routeSpline.length === 0) return 0;
+  let best = 0, bestD = Infinity;
+  // Coarse scan every 20 points, then refine ±20 around best
+  const step = 20;
+  for (let i = 0; i < routeSpline.length; i += step) {
+    const d = hvM([lng,lat],[routeSpline[i].lng,routeSpline[i].lat]);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  const lo = Math.max(0, best - step);
+  const hi = Math.min(routeSpline.length-1, best + step);
+  for (let i = lo; i <= hi; i++) {
+    const d = hvM([lng,lat],[routeSpline[i].lng,routeSpline[i].lat]);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return routeSpline[best].distM;
+}
+
+// ─────────────────────────────────────────────────────────
+// CAR STATE
+// ─────────────────────────────────────────────────────────
+let carLng=ORIGIN[0], carLat=ORIGIN[1], carBrg=0, carSpd=0;
+let lastModelT=0, bi=0, following=true;
+let drivenTrail=[];
+
+// FIX 1: removed 16ms throttle. The render loop already runs at rAF cadence,
+// and throttling here caused model↔camera desync (camera moves on frames
+// where the model skipped → car jiggles relative to camera = visible stutter).
+function mc(x,y,b){
+  const s=map.getSource('cs');
+  if(s&&typeof s.setModels==='function')
+    s.setModels({car:{uri:CAR,position:[x,y],orientation:[0,0,b],materialOverrideNames:MAT}});
+}
+function cst(v){
+  v=Math.max(0,Math.min(1,v));
+  try{map.setFeatureState({source:'cs',sourceLayer:'',id:'car'},
+    {vc:'rgba(210,215,220,1)',blc:'rgba(255,30,20,1)',ble:v});}catch(e){}
+}
+setInterval(()=>cst(bi),100);
+
+// ─────────────────────────────────────────────────────────
+// MAP LAYERS
+// ─────────────────────────────────────────────────────────
+function addLayers(){
+  map.addSource('fR',{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:routeCoords}}});
+  map.addLayer({id:'fr',type:'line',source:'fR',slot:'middle',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#aaa','line-width':2,'line-opacity':0.12,'line-dasharray':[2,4]}});
+  map.addSource('trail',{type:'geojson',lineMetrics:true,data:{type:'Feature',geometry:{type:'LineString',coordinates:[]}}});
+  map.addLayer({id:'tG',type:'line',source:'trail',slot:'middle',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#5AC8B0','line-width':['interpolate',['linear'],['zoom'],14,5,18,14,20,20],'line-opacity':0.1,'line-blur':8,'line-emissive-strength':0.3}});
+  map.addLayer({id:'tM',type:'line',source:'trail',slot:'middle',layout:{'line-join':'round','line-cap':'round'},paint:{'line-width':['interpolate',['linear'],['zoom'],14,2,18,7,20,10],'line-opacity':0.7,'line-emissive-strength':0.5,'line-gradient':['interpolate',['linear'],['line-progress'],0,'rgba(62,201,168,0)',0.5,'rgba(62,201,168,0.3)',1,'rgba(78,234,194,0.9)']}});
+  map.addSource('pings',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'pd',type:'circle',source:'pings',slot:'top',paint:{'circle-radius':['interpolate',['linear'],['zoom'],14,2,18,5,20,7],'circle-color':['get','c'],'circle-opacity':0.7,'circle-stroke-width':1,'circle-stroke-color':'rgba(255,255,255,0.4)'}});
+}
+let trailFC=0;
+function updateTrail(){
+  trailFC++;if(trailFC%4!==0)return;
+  const s=map.getSource('trail');
+  if(s&&drivenTrail.length>1) s.setData({type:'Feature',geometry:{type:'LineString',coordinates:drivenTrail}});
+}
+let rawPings=[];
+function updatePings(){
+  const s=map.getSource('pings');if(!s)return;
+  s.setData({type:'FeatureCollection',features:rawPings.slice(-200).map(p=>({
+    type:'Feature',geometry:{type:'Point',coordinates:[p.lng,p.lat]},
+    properties:{c:p.rej?'#FF3B30':(p.acc>20?'#FF9500':'#34C759')}
+  }))});
+}
+function gpsUI(acc){
+  const b=$('gps'),dots=b.querySelectorAll('i');let lv,lb;
+  if(acc<=5){lv=4;lb='Excellent';b.className='gps-bar good';}
+  else if(acc<=15){lv=3;lb='Good';b.className='gps-bar good';}
+  else if(acc<=30){lv=2;lb='Fair';b.className='gps-bar fair';}
+  else{lv=1;lb='Poor';b.className='gps-bar poor';}
+  dots.forEach((d,i)=>d.classList.toggle('on',i<lv));
+  $('gps-txt').textContent=`${lb} · ${acc.toFixed(0)}m`;
+}
+
+// ─────────────────────────────────────────────────────────
+// KALMAN FILTER — Layer 2
+// ─────────────────────────────────────────────────────────
+const kalman={
+  variance:-1, lat:0, lng:0, timestampMs:0, processNoise:3,
+  reset(){this.variance=-1; $('s-kalman').textContent='Variance: —';},
+  process(lat,lng,accuracy,timestampMs){
+    if(this.variance<0){
+      this.lat=lat;this.lng=lng;this.variance=accuracy*accuracy;
+      this.timestampMs=timestampMs;return{lat,lng};
+    }
+    const elapsed=Math.max(0,timestampMs-this.timestampMs);
+    this.variance+=elapsed*this.processNoise/1000;
+    this.timestampMs=timestampMs;
+    const k=this.variance/(this.variance+accuracy*accuracy);
+    this.lat+=k*(lat-this.lat);this.lng+=k*(lng-this.lng);
+    this.variance=(1-k)*this.variance;
+    $('s-kalman').textContent=`Variance: ${this.variance.toFixed(2)} (k=${k.toFixed(2)})`;
+    return{lat:this.lat,lng:this.lng};
+  }
+};
+
+// ─────────────────────────────────────────────────────────
+// SIM STATE
+// ─────────────────────────────────────────────────────────
+let routeProgressM=0;
+let simRunning=false,simTimer=null;
+let allAcceptedPings=[]; const MAX_PING_HISTORY=30;
+let matchInFlight=false,matchCallCount=0;
+let pingCount=0,rejectCount=0;
+let lastAccLng=ORIGIN[0],lastAccLat=ORIGIN[1],lastAccTime=0;
+
+// Road path (for Turf snap — keeps map matching working)
+let roadPts=[], roadCumD=null, roadBrgs=null, roadTotalRd=0, carDrivenM=0;
+function buildRoad(pts){
+  roadPts=pts;const N=pts.length;
+  roadCumD=new Float64Array(N);roadBrgs=new Float64Array(N);
+  for(let i=1;i<N;i++) roadCumD[i]=roadCumD[i-1]+hvM(pts[i-1],pts[i]);
+  roadTotalRd=N>0?roadCumD[N-1]:0;
+  for(let i=0;i<N-1;i++) roadBrgs[i]=bgFn(pts[i],pts[i+1]);
+  if(N>1) roadBrgs[N-1]=roadBrgs[N-2];
+}
+function replaceRoad(newPts){
+  if(newPts.length<2) return;
+  buildRoad(newPts);
+}
+let lastRoadHeading=0;
+function turfSnapToRoad(lng,lat){
+  if(roadPts.length<2) return null;
+  try{
+    const line=turf.lineString(roadPts);
+    const pt=turf.point([lng,lat]);
+    const snapped=turf.nearestPointOnLine(line,pt,{units:'meters'});
+    const dist=snapped.properties.dist;
+    const idx=snapped.properties.index;
+    let rh=null;
+    if(idx<roadPts.length-1) rh=bgFn(roadPts[idx],roadPts[idx+1]);
+    else if(idx>0)           rh=bgFn(roadPts[idx-1],roadPts[idx]);
+    $('s-turf').textContent=`Turf: ${dist.toFixed(1)}m off road`;
+    if(rh!==null) lastRoadHeading=rh;
+    return{lng:snapped.geometry.coordinates[0],lat:snapped.geometry.coordinates[1],heading:rh,dist};
+  }catch(e){$('s-turf').textContent='Turf: error';return null;}
+}
+
+// ─────────────────────────────────────────────────────────
+// MAP MATCHING — Layer 3a
+// ─────────────────────────────────────────────────────────
+async function mapMatch(coords){
+  if(coords.length<2) return null;
+  const pts=coords.slice(-100);
+  const str=pts.map(c=>`${c[0]},${c[1]}`).join(';');
+  const rad=pts.map(()=>'50').join(';');
+  try{
+    const r=await fetch(`https://api.mapbox.com/matching/v5/mapbox/driving/${str}?geometries=geojson&radiuses=${rad}&overview=full&access_token=${mapboxgl.accessToken}`);
+    const d=await r.json();
+    if(d.matchings&&d.matchings.length>0) return d.matchings[0].geometry.coordinates;
+  }catch(e){console.warn('Map match failed',e);}
+  return null;
+}
+
+// Sim route sampling (for GPS sim, not render)
+function sampleSim(m){
+  m=Math.max(0,Math.min(m,routeTotalM));let c=0;
+  for(let i=0;i<routeCoords.length-1;i++){
+    const s=routeSegDists[i];
+    if(c+s>=m){const t=(m-c)/s;const a=routeCoords[i],b=routeCoords[i+1];return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];}
+    c+=s;
+  }
+  return routeCoords[routeCoords.length-1];
+}
+
+// ─────────────────────────────────────────────────────────
+// GPS INGEST — 4-layer pipeline
+// OUTPUT: distM (position along pre-baked route) + speedKmh
+// This is the ONLY thing the render loop cares about.
+// Position on screen is entirely from the pre-baked spline.
+// ─────────────────────────────────────────────────────────
+async function ingest(lng,lat,acc,spdHint){
+  const now=Date.now(); pingCount++;
+  let rej=false;
+
+  // Layer 1 — Outlier rejection
+  if(simStarted&&lastAccTime>0){
+    const elapsedS=Math.max(0.1,(now-lastAccTime)/1000);
+    const spd=hvM([lastAccLng,lastAccLat],[lng,lat])/elapsedS;
+    if(spd>70){rej=true;rejectCount++;$('s-gate').textContent=`${spd.toFixed(0)} m/s → REJECTED`;}
+    else{$('s-gate').textContent=`${spd.toFixed(1)} m/s → OK`;}
+  }
+  rawPings.push({lng,lat,acc,rej});if(rawPings.length>300)rawPings.shift();
+  updatePings();
+  $('s-ping').textContent=`Pings: ${pingCount}`;
+  $('s-rejected').textContent=`Rejected: ${rejectCount}`;
+  $('s-acc').textContent=`Accuracy: ${acc.toFixed(0)}m`;
+  $('coords').textContent=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  gpsUI(acc);
+  if(rej) return;
+
+  // Layer 2 — Kalman
+  const smoothed=kalman.process(lat,lng,acc,now);
+  const kLng=smoothed.lng, kLat=smoothed.lat;
+  lastAccLng=kLng; lastAccLat=kLat; lastAccTime=now;
+  allAcceptedPings.push([kLng,kLat]);
+  if(allAcceptedPings.length>MAX_PING_HISTORY) allAcceptedPings.shift();
+
+  if(!simStarted){
+    simStarted=true;
+    if(routeCoords.length>1) buildRoad(routeCoords);
+    map.jumpTo({center:[kLng,kLat],bearing:0,pitch:CAMS[cam].p,zoom:CAMS[cam].z});
+  }
+
+  // Layer 3a — Map matching (updates roadPts for Turf)
+  const interval=mode==='low'?4:6;
+  if(allAcceptedPings.length>=3&&allAcceptedPings.length%interval===0&&!matchInFlight){
+    matchInFlight=true; matchCallCount++;
+    $('s-snap').textContent=`Map Match #${matchCallCount}: calling…`;
+    const snapped=await mapMatch(allAcceptedPings);
+    matchInFlight=false;
+    if(snapped&&snapped.length>1){
+      $('s-snap').textContent=`Map Match #${matchCallCount}: ${snapped.length} pts ✓`;
+      replaceRoad(snapped);
+    }else{$('s-snap').textContent=`Map Match #${matchCallCount}: no result`;}
+  }
+
+  // Layer 3b — Turf snap (refines position onto road)
+  let finalLng=kLng, finalLat=kLat;
+  if(roadPts.length>=2){
+    const snap=turfSnapToRoad(kLng,kLat);
+    if(snap){finalLng=snap.lng; finalLat=snap.lat;}
+  }
+
+  // ── PROJECT ONTO PRE-BAKED ROUTE SPLINE ─────────────
+  // Convert filtered position to scalar: metres along route.
+  // This is the ONLY value the render loop reads from GPS.
+  const distM = projectOntoRoute(finalLng, finalLat);
+
+  $('s-path').textContent = `GPS dist: ${distM.toFixed(0)}m / ${routeSplineTotal.toFixed(0)}m`;
+
+  // Update GPS state — render loop reads these, never raw lat/lng
+  gpsDistM   = distM;
+  // FIX 2: EMA smooth the speed hint. Raw sim hint carries ±30% noise
+  // which otherwise pumps directly into the render playhead.
+  const newSpeedMS = Math.max(0, spdHint / 3.6);
+  gpsSpeedMS = gpsFixCount === 0
+    ? newSpeedMS
+    : gpsSpeedMS + SPEED_EMA_ALPHA * (newSpeedMS - gpsSpeedMS);
+  gpsWallMs  = now;
+  gpsReady   = true;
+  gpsLive    = true;
+  gpsFixCount++;
+
+  // On first fix: position playhead at GPS location so it
+  // doesn't have to drift from 0 to wherever GPS is
+  if(gpsFixCount === 1){
+    renderDistM = distM;
+    playSpeedMS = gpsSpeedMS;
+    playLastTs  = 0;
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// ROUTE FETCH + PREBAKE
+// ─────────────────────────────────────────────────────────
+async function fetchRoute(){
+  $('gps-txt').textContent='Loading route…';
+  try{
+    const u=`https://api.mapbox.com/directions/v5/mapbox/driving/${ORIGIN[0]},${ORIGIN[1]};${DEST[0]},${DEST[1]}?geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`;
+    const r=await fetch(u), d=await r.json();
+    if(d.routes&&d.routes.length){
+      routeCoords=d.routes[0].geometry.coordinates;
+      routeSegDists=[];routeTotalM=0;
+      for(let i=0;i<routeCoords.length-1;i++){
+        const dd=hvM(routeCoords[i],routeCoords[i+1]);
+        routeSegDists.push(dd);routeTotalM+=dd;
+      }
+      $('gps-txt').textContent='Baking route spline…';
+      const ok = prebakeRoute(routeCoords);
+      if(ok){
+        routeReady=true;
+        $('gps-txt').textContent='Ready';
+        console.log(`Route ready. Spline: ${routeSpline.length} pts, ${(routeSplineTotal/1000).toFixed(2)}km`);
+      } else {
+        $('gps-txt').textContent='Spline error';
+      }
+      return ok;
+    }
+  }catch(e){console.warn('Route fetch failed',e);}
+  $('gps-txt').textContent='Route load failed';
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────
+// SIM PING
+// ─────────────────────────────────────────────────────────
+function simPing(){
+  if(!simRunning) return;
+  const m=MODES[mode], spdKmh=40*(1+(Math.random()-.5)*m.speedVar);
+  routeProgressM+=(spdKmh/3.6)*(m.interval/1000);
+  if(routeProgressM>=routeTotalM){simRunning=false;$('gps-txt').textContent='Route complete';return;}
+  if(Math.random()<m.dropRate){nextP();return;}
+  const tp=sampleSim(routeProgressM);
+  let lng,lat,acc;
+  if(Math.random()<m.jumpRate){
+    const n=addNoise(tp[0],tp[1],120+Math.random()*180);lng=n[0];lat=n[1];acc=m.accR[1]*3;
+  }else{
+    const n=addNoise(tp[0],tp[1],m.noiseM);lng=n[0];lat=n[1];acc=m.accR[0]+Math.random()*(m.accR[1]-m.accR[0]);
+  }
+  ingest(lng,lat,acc,spdKmh);nextP();
+}
+function nextP(){if(!simRunning)return;simTimer=setTimeout(simPing,MODES[mode].interval*(.8+Math.random()*.4));}
+
+// ─────────────────────────────────────────────────────────
+// RESET
+// ─────────────────────────────────────────────────────────
+function resetAll(){
+  simRunning=false;if(simTimer)clearTimeout(simTimer);
+  routeProgressM=0;pingCount=0;rejectCount=0;matchCallCount=0;
+  allAcceptedPings=[];matchInFlight=false;
+  drivenTrail=[];rawPings=[];simStarted=false;
+  gpsQueue=[];renderDistM=0;playSpeedMS=0;playLastTs=0;
+  gpsDistM=0;gpsSpeedMS=11;gpsWallMs=0;gpsReady=false;gpsLive=false;gpsFixCount=0;
+  roadPts=[];roadCumD=null;roadBrgs=null;roadTotalRd=0;carDrivenM=0;
+  carLng=ORIGIN[0];carLat=ORIGIN[1];carBrg=0;carSpd=0;bi=0;
+  lastAccLng=ORIGIN[0];lastAccLat=ORIGIN[1];lastAccTime=0;lastRoadHeading=0;
+  kalman.reset();
+  mc(ORIGIN[0],ORIGIN[1],0);cst(0);
+  const ts=map.getSource('trail');if(ts)ts.setData({type:'Feature',geometry:{type:'LineString',coordinates:[]}});
+  const ps=map.getSource('pings');if(ps)ps.setData({type:'FeatureCollection',features:[]});
+  $('spd').textContent='0';$('coords').textContent='—';
+  $('s-ping').textContent='Pings: 0';$('s-acc').textContent='Accuracy: —';
+  $('s-path').textContent='Progress: —';$('s-rejected').textContent='Rejected: 0';
+  $('s-gate').textContent='Speed gate: —';$('s-kalman').textContent='Variance: —';
+  $('s-snap').textContent='Map Match: idle';$('s-turf').textContent='Turf snap: —';
+  $('s-heading').textContent='Bearing: —';$('s-delay').textContent='GPS delay: —';
+  $('s-buf').textContent=routeReady?`Spline: ${routeSpline.length} pts`:'Spline: —';
+  $('s-playhead').textContent='Target: —';$('s-interp').textContent='Render: —';
+  $('gps-txt').textContent='Ready';$('gps').className='gps-bar wait';
+  $('gps').querySelectorAll('i').forEach(d=>d.classList.remove('on'));
+  const c=CAMS[cam];map.easeTo({center:ORIGIN,bearing:0,pitch:c.p,zoom:c.z,duration:1000});
+}
+
+// ─────────────────────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────────────────────
+$('bP').onclick=()=>{
+  if(simRunning){
+    // Pause: stop the simulator from emitting raw GPS data.
+    // Also mark gpsLive=false so the render loop enters coast mode
+    // on its next frame — otherwise it would extrapolate using the
+    // last known speed for up to GPS_STALE_MS before noticing.
+    simRunning=false;
+    if(simTimer)clearTimeout(simTimer);
+    gpsLive=false;
+    $('gps-txt').textContent='Paused';
+    return;
+  }
+  if(!routeReady){alert('Route not ready yet — wait a moment.');return;}
+  if(routeProgressM>=routeTotalM)resetAll();
+  simRunning=true;following=true;simPing();
+};
+$('bR').onclick=()=>resetAll();
+document.querySelectorAll('.mode-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');mode=b.dataset.mode;
+    $('s-mode').textContent=`Mode: ${mode==='low'?'Low GPS':'High GPS'}`;
+    if(simRunning){simRunning=false;if(simTimer)clearTimeout(simTimer);resetAll();setTimeout(()=>{simRunning=true;following=true;simPing();},500);}
+  });
+});
+document.querySelectorAll('.cam-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.cam-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');cam=b.dataset.cam;following=true;
+    if(simStarted){const c=CAMS[cam];map.easeTo({center:[carLng,carLat],bearing:carBrg+c.o,pitch:c.p,zoom:c.z,duration:800});}
+  });
+});
+map.on('dragstart',()=>{following=false;});
+map.on('load',async()=>{
+  // ── Basemap color overrides ──────────────────────────────
+  // These target the Mapbox Standard style's built-in config
+  // properties (requires GL-JS v3.17.0+ for colorBuildings,
+  // v3.9.0+ for the road colors). Each call re-tints the
+  // relevant layers in place; no style reload required.
+  map.setConfigProperty('basemap', 'colorBuildings', '#F3F2FF');
+  map.setConfigProperty('basemap', 'colorRoads',     '#E3E3E8');
+  map.setConfigProperty('basemap', 'colorTrunks',    '#E3E3E8');
+  map.setConfigProperty('basemap', 'colorMotorways', '#E3E3E8');
+
+  await fetchRoute();addLayers();cst(0);requestAnimationFrame(renderLoop);
+});
+</script>
+</body>
+</html>
